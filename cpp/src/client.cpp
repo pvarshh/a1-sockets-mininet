@@ -1,74 +1,123 @@
 #include <iostream>
+#include <cstring>
+#include <chrono>
+#include <thread>
 #include <spdlog/spdlog.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <arpa/inet.h>
 #include <unistd.h>
-#include <chrono>
-#include <numeric>
-#include <cstring>
+#include <arpa/inet.h>
+#include "client.h"
 
 void runClient(const std::string& host, int port, int time) {
-    int sock = 0;
-    struct sockaddr_in serv_addr;
+    int clientSocket;
+    struct sockaddr_in serverAddr;
 
-    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        spdlog::error("Socket creation error");
-        exit(EXIT_FAILURE);
+    // Create socket
+    clientSocket = socket(AF_INET, SOCK_STREAM, 0);
+    if (clientSocket < 0) {
+        spdlog::error("Error creating socket");
+        exit(1);
     }
 
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(port);
-
-    if (inet_pton(AF_INET, host.c_str(), &serv_addr.sin_addr) <= 0) {
-        spdlog::error("Invalid address/ Address not supported");
-        exit(EXIT_FAILURE);
+    // Connect to server
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_port = htons(port);
+    if (inet_pton(AF_INET, host.c_str(), &serverAddr.sin_addr) <= 0) {
+        spdlog::error("Invalid address/Address not supported");
+        close(clientSocket);
+        exit(1);
+    }
+    if (connect(clientSocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) < 0) {
+        spdlog::error("Connection failed");
+        close(clientSocket);
+        exit(1);
     }
 
-    if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-        spdlog::error("Connection Failed");
-        exit(EXIT_FAILURE);
-    }
-
-    // RTT estimation phase
-    std::vector<long long> rtts;
+    // RTT estimation
+    spdlog::info("RTT Calculation Start");
+    char buffer[1];
+    std::vector<double> rttMeasurements;
+    auto startTime = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < 8; ++i) {
-        auto start = std::chrono::high_resolution_clock::now();
-        send(sock, "M", 1, 0); // Send 'M' to server
-        char buffer[1];
-        recv(sock, buffer, 1, 0); // Receive 'A' from server
-        auto end = std::chrono::high_resolution_clock::now();
-        long long rtt = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-        rtts.push_back(rtt);
-    }
-    long long sum = 0;
-    for (int i = 4; i < 8; ++i) {
-        sum += rtts[i];
-    }
-    long long rtt = sum / 4;
-
-    char buffer[81920] = {0}; // 80KB buffer
-    long total_bytes_sent = 0;
-    auto start_time = std::chrono::high_resolution_clock::now();
-
-    auto end_time = start_time + std::chrono::seconds(time);
-
-    while (std::chrono::high_resolution_clock::now() < end_time) {
-        int bytes_sent = send(sock, buffer, sizeof(buffer), 0);
-        if (bytes_sent < 0) {
-            spdlog::error("Send failed");
-            break; 
+        buffer[0] = 'M';
+        if (send(clientSocket, buffer, 1, 0) < 0) {
+            spdlog::error("Error sending data");
+            close(clientSocket);
+            exit(1);
         }
-        total_bytes_sent += bytes_sent;
+
+        if (recv(clientSocket, buffer, 1, 0) < 0) {
+            spdlog::error("Error receiving data");
+            close(clientSocket);
+            exit(1);
+        }
+        if (buffer[0] != 'A') {
+            spdlog::error("Invalid ACK received");
+            close(clientSocket);
+            exit(1);
+        }
+
+        // Measure RTT
+        auto endTime = std::chrono::high_resolution_clock::now();
+        double rtt = std::chrono::duration<double, std::milli>(endTime - startTime).count();
+        if (i >= 4) { // Exclude first 4 measurements
+            spdlog::info("RTT Calculation on {}th iteration: {} ms", i, static_cast<int>(rtt));
+            rttMeasurements.push_back(rtt);
+        }
+        startTime = endTime;
     }
 
-    auto final_time = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(final_time - start_time).count();
-    spdlog::info("Duration {} seconds", duration / 1e6);
+    // Calculate average RTT
+    spdlog::info("RTT Computation Start");
+    double avgRtt = 0;
+    for (double rtt : rttMeasurements) {
+        avgRtt += rtt;
+    }
+    avgRtt /= rttMeasurements.size();
+    spdlog::info("RTT Computation End");
+    spdlog::info("RTT = {} ms", static_cast<int>(avgRtt));
+    spdlog::info("RTT Calculation Complete");
 
-    double rate = (total_bytes_sent * 8.0) / (duration / 1e6) / 1e6; // Mbps
+    // Data transmission
+    int totalBytesSent = 0;
+    char dataBuffer[81920] = {0}; // 80KB of zeros
+    auto dataStartTime = std::chrono::high_resolution_clock::now();
+    auto endTime = dataStartTime + std::chrono::seconds(time);
+    while (std::chrono::high_resolution_clock::now() < endTime) {
+        int bytesSent = 0;
+        while (bytesSent < sizeof(dataBuffer)) {
+            int result = send(clientSocket, dataBuffer + bytesSent, sizeof(dataBuffer) - bytesSent, 0);
+            if (result < 0) {
+                spdlog::error("Error sending data");
+                close(clientSocket);
+                exit(1);
+            }
+            bytesSent += result;
+        }
+        totalBytesSent += bytesSent;
 
-    spdlog::info("Sent={} KB, Rate={:.3f} Mbps, RTT={} ms", total_bytes_sent / 1024, rate, rtt);
+        // Wait for ACK
+        if (recv(clientSocket, buffer, 1, 0) < 0) {
+            spdlog::error("Error receiving ACK");
+            close(clientSocket);
+            exit(1);
+        }
+        if (buffer[0] != 'A') {
+            spdlog::error("Invalid ACK received");
+            close(clientSocket);
+            exit(1);
+        }
+    }
+    auto dataEndTime = std::chrono::high_resolution_clock::now();
 
-    close(sock);
+    // Calculate throughput
+    double elapsedTime = std::chrono::duration<double>(dataEndTime - dataStartTime).count();
+    double rate = (totalBytesSent * 8) / (elapsedTime * 1000000); // Mbps
+
+    // Log summary
+    spdlog::info("Sent={} KB, Rate={:.3f} Mbps, RTT={} ms", totalBytesSent / 1024, rate, static_cast<int>(avgRtt));
+
+    // Cleanup
+    close(clientSocket);
 }
