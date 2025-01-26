@@ -1,0 +1,8 @@
+{
+    "cmake.sourceDirectory": "/home/ubuntu/a1-sockets-mininet/cpp",
+    "files.associations": {
+        "*.swift": "swift",
+        "*.astro": "astro",
+        "iostream": "cpp"
+    }
+}
