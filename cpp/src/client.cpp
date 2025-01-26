@@ -57,7 +57,7 @@ void runClient(const std::string& host, int port, int time) {
         int bytes_sent = send(sock, buffer, sizeof(buffer), 0);
         if (bytes_sent < 0) {
             spdlog::error("Send failed");
-            break;
+            break; 
         }
         total_bytes_sent += bytes_sent;
     }
