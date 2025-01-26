@@ -10,6 +10,8 @@
 #include "server.h"
 
 void runServer(int port) {
+    spdlog::set_level(spdlog::level::debug); 
+
     int serverSocket, clientSocket;
     struct sockaddr_in serverAddr, clientAddr;
     socklen_t clientAddrLen = sizeof(clientAddr);
@@ -58,7 +60,7 @@ void runServer(int port) {
     spdlog::info("Client connected");
 
     // RTT estimation
-    spdlog::info("RTT Calculation Start");
+    spdlog::debug("RTT Calculation Start");
     char buffer[1];
     std::vector<double> rttMeasurements;
     auto startTime = std::chrono::high_resolution_clock::now();
@@ -89,26 +91,27 @@ void runServer(int port) {
         auto endTime = std::chrono::high_resolution_clock::now();
         double rtt = std::chrono::duration<double, std::milli>(endTime - startTime).count();
         if (i >= 4) { // Exclude first 4 measurements
-            spdlog::info("RTT Calculation on {}th iteration: {} ms", i, static_cast<int>(rtt));
+            spdlog::debug("RTT Calculation on {}th iteration: {} ms", i, static_cast<int>(rtt));
             rttMeasurements.push_back(rtt);
         }
         startTime = endTime;
     }
 
     // Calculate average RTT
-    spdlog::info("RTT Computation Start");
+    spdlog::debug("RTT Computation Start");
     double avgRtt = 0;
     for (double rtt : rttMeasurements) {
         avgRtt += rtt;
     }
     avgRtt /= rttMeasurements.size();
-    spdlog::info("RTT Computation End");
-    spdlog::info("RTT = {} ms", static_cast<int>(avgRtt));
-    spdlog::info("RTT Calculation Complete");
+    spdlog::debug("RTT Computation End");
+    spdlog::debug("RTT = {} ms", static_cast<int>(avgRtt));
+    spdlog::debug("RTT Calculation Complete");
 
 
     // Data transmission
     int totalBytesReceived = 0;
+    int ackCount = 0; // Number of ACKs sent
     auto dataStartTime = std::chrono::high_resolution_clock::now();
     while (true) {
         char dataBuffer[81920]; // 80KB
@@ -131,13 +134,14 @@ void runServer(int port) {
             close(serverSocket);
             exit(1);
         }
+        ackCount++;
     }
     end_transmission:
     auto dataEndTime = std::chrono::high_resolution_clock::now();
 
     // Calculate throughput
-    double elapsedTime = std::chrono::duration<double>(dataEndTime - dataStartTime).count();
-    double rate = (totalBytesReceived * 8) / (elapsedTime * 1000000); // Mbps
+    double duration = std::chrono::duration<double>(dataEndTime - dataStartTime).count();
+    double rate = (totalBytesReceived * 8.0 / 1'000'000.0) / (duration - ((avgRtt * ackCount) / 1000));
 
     // Log summary
     spdlog::info("Received={} KB, Rate={:.3f} Mbps, RTT={} ms", totalBytesReceived / 1024, rate, static_cast<int>(avgRtt));
