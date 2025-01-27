@@ -116,8 +116,8 @@ void runClient(const std::string& host, int port, int time) {
     auto dataEndTime = std::chrono::high_resolution_clock::now();
 
     // Calculate throughput
-    double duration = std::chrono::duration<double>(dataEndTime - dataStartTime).count();
-    double rate = (totalBytesSent * 8.0 / 1'000'000.0) / (duration - ((avgRtt * ackCount) / 1000));
+    double duration = std::chrono::duration<double, std::milli>(dataEndTime - dataStartTime).count();
+    double rate = (totalBytesSent * (8.0 / 1'000'000.0)) / ((duration - (avgRtt * ackCount)) / 1'000.0);
 
     // Log summary
     spdlog::info("Sent={} KB, Rate={:.3f} Mbps, RTT={} ms", totalBytesSent / 1024, rate, static_cast<int>(avgRtt));
