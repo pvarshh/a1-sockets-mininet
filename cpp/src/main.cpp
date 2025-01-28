@@ -114,6 +114,7 @@ void runServer(int port) {
     int totalBytesReceived = 0;
     int ackCount = 0; // Number of ACKs sent
     auto dataStartTime = std::chrono::high_resolution_clock::now();
+    auto dataEndTime = std::chrono::high_resolution_clock::now();
     while (true) {
         char dataBuffer[81920]; // 80KB
         int bytesReceived = 0;
@@ -128,6 +129,7 @@ void runServer(int port) {
         totalBytesReceived += bytesReceived;
 
         // Send ACK
+        dataEndTime = std::chrono::high_resolution_clock::now();
         buffer[0] = 'A';
         if (send(clientSocket, buffer, 1, 0) < 0) {
             spdlog::error("Error sending ACK");
@@ -138,12 +140,9 @@ void runServer(int port) {
         ackCount++;
     }
     end_transmission:
-    auto dataEndTime = std::chrono::high_resolution_clock::now();
 
     // Calculate throughput
-    
     double duration = std::chrono::duration<double, std::milli>(dataEndTime - dataStartTime).count();
-
     spdlog::debug("megabits: {}", totalBytesReceived * 8.0 / 1'000'000.0);
     spdlog::debug("start: {}", std::chrono::duration_cast<std::chrono::milliseconds>(dataStartTime.time_since_epoch()).count());
     spdlog::debug("end: {}", std::chrono::duration_cast<std::chrono::milliseconds>(dataEndTime.time_since_epoch()).count());
@@ -166,7 +165,8 @@ void runServer(int port) {
 
 void runClient(const std::string& host, int port, int time) {
     spdlog::set_level(spdlog::level::debug); 
-
+    spdlog::debug("filler to even out");
+    spdlog::debug("filler to even out");
     int clientSocket;
     struct sockaddr_in serverAddr;
 
