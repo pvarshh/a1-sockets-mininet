@@ -145,6 +145,8 @@ void runServer(int port) {
     double duration = std::chrono::duration<double, std::milli>(dataEndTime - dataStartTime).count();
 
     spdlog::debug("megabits: {}", totalBytesReceived * 8.0 / 1'000'000.0);
+    spdlog::debug("start: {}", std::chrono::duration_cast<std::chrono::milliseconds>(dataStartTime.time_since_epoch()).count());
+    spdlog::debug("end: {}", std::chrono::duration_cast<std::chrono::milliseconds>(dataEndTime.time_since_epoch()).count());
     spdlog::debug("Duration: {}", duration);
     spdlog::debug("avgRtt: {}", avgRtt);
     spdlog::debug("ackCount: {}", ackCount);
@@ -271,6 +273,8 @@ void runClient(const std::string& host, int port, int time) {
     // Calculate throughput
     double duration = std::chrono::duration<double, std::milli>(dataEndTime - dataStartTime).count();
     spdlog::debug("megabits: {}", totalBytesSent * 8.0 / 1'000'000.0);
+    spdlog::debug("start: {}", std::chrono::duration_cast<std::chrono::milliseconds>(dataStartTime.time_since_epoch()).count());
+    spdlog::debug("end: {}", std::chrono::duration_cast<std::chrono::milliseconds>(dataEndTime.time_since_epoch()).count());
     spdlog::debug("Duration: {}", duration);
     spdlog::debug("avgRtt: {}", avgRtt);
     spdlog::debug("ackCount: {}", ackCount);
